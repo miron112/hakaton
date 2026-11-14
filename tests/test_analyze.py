@@ -12,6 +12,7 @@ from radar.db import init_db, make_engine, session_scope
 from radar.llm.base import LLMClient, LLMReply, Message
 from radar.models import Analysis, RawItem, Source, utcnow
 from radar.pipeline.analyze import analyze_pending
+from radar.pipeline.geo import check_local_geo
 from radar.pipeline.prefilter import prefilter_new, reject_reason
 from radar.prompts import ANALYZE_PROMPT_VERSION
 from tests.test_llm import VALID
@@ -117,6 +118,31 @@ def test_one_bad_item_does_not_affect_others(engine: Engine) -> None:
     assert (stats.analyzed, stats.invalid, stats.failed) == (1, 1, 1)
     # Невалидный JSON — окончательная ошибка; сбой API — материал ждёт следующего цикла
     assert _statuses(engine) == {"good": "analyzed", "garbage": "error", "outage": "new"}
+
+
+@pytest.mark.parametrize(
+    ("source_type", "text", "geo", "expected_geo"),
+    [
+        ("rss", "Верховный суд разрешил конфисковать автомобили у родственников", "khmao", "unknown"),
+        ("rss", "В Нягани построили первый в Югре модульный бассейн", "khmao", "khmao"),
+        ("rss", "На улице Ленина открыли сквер", "surgut_city", "unknown"),
+        ("html", "Жители Фёдоровского получили новую школу", "surgut_district", "surgut_district"),
+        ("telegram", "На Ленина прорвало трубу, движение перекрыто", "surgut_city", "surgut_city"),
+        ("rss", "В Тюмени ограничат движение", "other", "other"),
+    ],
+)
+def test_local_geo_must_be_confirmed_by_article_text(source_type, text, geo, expected_geo) -> None:
+    data = {**VALID, "geo_level": geo, "places": [], "affects_surgut": True, "confidence": 0.9}
+    changed = check_local_geo(data, source_type, text)
+
+    assert data["geo_level"] == expected_geo and changed == (geo != expected_geo)
+    if changed:
+        assert data["affects_surgut"] is False and data["confidence"] <= 0.3
+
+
+def test_places_named_by_model_also_confirm_geo() -> None:
+    data = {**VALID, "geo_level": "khmao", "places": ["Когалым"]}
+    assert check_local_geo(data, "rss", "Текст без названия города") is False
 
 
 def test_cycle_limit_postpones_the_rest(engine: Engine, monkeypatch) -> None:

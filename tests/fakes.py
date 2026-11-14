@@ -2,6 +2,7 @@
 
 import json
 import math
+import zlib
 
 from radar.llm.base import LLMClient, LLMReply, Message
 
@@ -29,19 +30,21 @@ class FakeSender:
 class KeywordEmbedder:
     """Тексты с одним и тем же ключевым словом получают почти одинаковые векторы."""
 
+    EXTRA_DIMS = 4096
+
     def __init__(self, *keywords: str) -> None:
         self.keywords = keywords
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         vectors = []
         for text in texts:
-            vector = [0.0] * (len(self.keywords) + 1)
+            vector = [0.0] * (len(self.keywords) + self.EXTRA_DIMS)
             lowered = text.lower()
             index = next((i for i, word in enumerate(self.keywords) if word in lowered), None)
             if index is None:
-                vector[-1] = 1.0  # тексты без ключевых слов похожи только друг на друга
-            else:
-                vector[index] = 1.0
+                # Текст без ключевых слов похож только на точно такой же текст
+                index = len(self.keywords) + zlib.crc32(lowered.encode()) % self.EXTRA_DIMS
+            vector[index] = 1.0
             norm = math.sqrt(sum(value * value for value in vector))
             vectors.append([value / norm for value in vector])
         return vectors

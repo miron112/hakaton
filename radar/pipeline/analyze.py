@@ -14,6 +14,7 @@ from radar.db import session_scope
 from radar.llm import LLMClient, LLMResponseError, LLMResult, LLMUsage
 from radar.log import log_event
 from radar.models import Analysis, RawItem
+from radar.pipeline.geo import check_local_geo
 from radar.prompts import ANALYZE_PROMPT_VERSION, load_prompt, render
 from radar.timeutil import format_local
 
@@ -61,6 +62,8 @@ class AnalyzeStats:
 class _Job:
     item_id: int
     source_name: str
+    source_type: str
+    text: str
     user_prompt: str
 
 
@@ -110,7 +113,10 @@ def _load_jobs(engine: Engine | None, settings: Settings) -> tuple[list[_Job], i
         items = sorted(items, key=lambda item: item.source.priority)
         limit = settings.llm_max_items_per_cycle
         jobs = [
-            _Job(item.id, item.source.name, build_user_prompt(item, settings))
+            _Job(
+                item.id, item.source.name, item.source.type, f"{item.title or ''} {item.text}",
+                build_user_prompt(item, settings),
+            )
             for item in items[:limit]
         ]
         return jobs, max(0, len(items) - limit)
@@ -145,6 +151,8 @@ def _save(
         return
 
     data = normalize(outcome.data, settings)
+    if check_local_geo(data, job.source_type, job.text):
+        log_event("analyze", "geo_not_confirmed", job.source_name, item=job.item_id)
     with session_scope(engine) as session:
         session.add(
             Analysis(

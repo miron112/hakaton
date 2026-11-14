@@ -183,6 +183,34 @@ async def _decide(
     return DedupResult.model_validate(result.data)
 
 
+async def _drop_known_facts(
+    embedder: Embedder, decision: DedupResult, candidates: list[Candidate], settings: Settings
+) -> DedupResult:
+    """Страховка от «обновлений» без новизны: модель часто пересказывает уже известное.
+
+    Факты, по смыслу совпадающие с известными фактами события, убираются.
+    Не осталось ни одного — это duplicate.
+    """
+    if decision.relation != "update" or not candidates:
+        return decision
+    event = _matched_event(decision, candidates)
+    facts = [fact.strip() for fact in decision.new_facts if fact.strip()]
+    known = [text for text in [event.summary, *event.key_facts] if text]
+    if facts and known:
+        vectors = await asyncio.to_thread(embedder.embed, facts + known)
+        fact_vectors, known_vectors = vectors[: len(facts)], vectors[len(facts) :]
+        facts = [
+            fact
+            for fact, vector in zip(facts, fact_vectors)
+            if max(cosine(vector, other) for other in known_vectors) < settings.dedup_fact_sim_threshold
+        ]
+    if not facts and not decision.is_official_confirmation:
+        return decision.model_copy(
+            update={"relation": "duplicate", "new_facts": [], "reason": "новых фактов нет"}
+        )
+    return decision.model_copy(update={"new_facts": facts})
+
+
 async def _backfill_embeddings(embedder: Embedder, engine: Engine | None, settings: Settings) -> None:
     """События, созданные до появления дедупликации, получают эмбеддинг."""
     since = utcnow() - timedelta(hours=settings.dedup_window_hours)
@@ -216,6 +244,7 @@ async def assign_events(
                 embedding = (await asyncio.to_thread(embedder.embed, [text]))[0]
                 candidates = find_candidates(session, embedding, settings)
                 decision = await _decide(client, item, candidates, stats)
+                decision = await _drop_known_facts(embedder, decision, candidates, settings)
                 relation, event = apply_decision(session, item, decision, candidates, embedding)
                 source_name = item.source.name
                 event_id = event.id

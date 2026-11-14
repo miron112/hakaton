@@ -50,7 +50,8 @@ def _published_at(raw: str | None) -> datetime | None:
     return min(noon.astimezone(timezone.utc).replace(tzinfo=None), utcnow())
 
 
-def parse_article(html: str, url: str, listing_title: str) -> CollectedItem | None:
+def extract_article(html: str, url: str) -> dict | None:
+    """Основной текст и метаданные страницы статьи; None — текст не найден."""
     document = trafilatura.bare_extraction(
         html, url=url, include_comments=False, include_tables=False, with_metadata=True
     )
@@ -58,8 +59,14 @@ def parse_article(html: str, url: str, listing_title: str) -> CollectedItem | No
         return None
     data = document if isinstance(document, dict) else document.as_dict()
     text = clean_text(data.get("text"))
-    if not text:
+    return {**data, "text": text} if text else None
+
+
+def parse_article(html: str, url: str, listing_title: str) -> CollectedItem | None:
+    data = extract_article(html, url)
+    if data is None:
         return None
+    text = data["text"]
     return CollectedItem(
         external_id=url,
         url=url,

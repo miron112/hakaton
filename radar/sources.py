@@ -46,6 +46,7 @@ class SourceConfig(BaseModel):
     role: SourceRole = "source"  # own — лента самой редакции: не уведомлять, только сравнивать
     note: str | None = None
     parser: ParserConfig | None = None
+    full_text: bool = False  # только rss: догружать полный текст статьи по ссылке
 
     @model_validator(mode="before")
     @classmethod
@@ -69,7 +70,15 @@ class SourceConfig(BaseModel):
             self.url = _normalize_handle(_VK_PREFIX.sub("", self.url))
         if self.type == "html" and self.parser is None:
             raise ValueError("для type=html обязателен блок parser с селекторами")
+        if self.full_text and self.type != "rss":
+            raise ValueError("full_text поддерживается только для type=rss")
         return self
+
+    def parser_config(self) -> dict[str, Any] | None:
+        """Что сохраняется в sources.parser_config."""
+        if self.parser:
+            return self.parser.model_dump()
+        return {"full_text": True} if self.full_text else None
 
 
 def _normalize_handle(value: str) -> str:
@@ -140,7 +149,7 @@ def sync_sources(session: Session, configs: list[SourceConfig]) -> SyncResult:
     """
     result = SyncResult()
     for config in configs:
-        parser_config = config.parser.model_dump() if config.parser else None
+        parser_config = config.parser_config()
         source = session.scalar(
             select(Source).where(Source.type == config.type, Source.url == config.url)
         )

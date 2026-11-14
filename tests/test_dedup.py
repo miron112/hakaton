@@ -115,6 +115,36 @@ def test_update_is_sent_as_reply_to_original_message(engine: Engine) -> None:
     assert asyncio.run(notify_pending(sender, engine)).updates == 0 and len(sender.texts) == 1
 
 
+def test_update_without_really_new_facts_becomes_duplicate(engine: Engine) -> None:
+    _add(engine, "1", "Пожар: горит склад")
+    _add(engine, "2", "На складе пожар", source_id=2)
+    # Модель назвала это обновлением, но её «новый факт» уже есть в событии
+    client = DedupClient({"relation": "update", "event_id": "1", "new_facts": ["исходный факт"]})
+
+    stats = _assign(engine, client)
+
+    assert (stats.updates, stats.duplicates) == (0, 1)
+    assert _links(engine) == [(1, "origin"), (1, "duplicate")]
+
+
+def test_update_keeps_only_new_facts_and_official_confirmation(engine: Engine) -> None:
+    _add(engine, "1", "Пожар: горит склад")
+    _add(engine, "2", "На складе пожар", source_id=2)
+    _add(engine, "3", "Пожар на складе подтвердили", source_id=2)
+    client = DedupClient(
+        {"relation": "update", "event_id": "1", "new_facts": ["исходный факт", "Эвакуированы 30 человек"]},
+        {"relation": "update", "event_id": "1", "new_facts": [], "is_official_confirmation": True},
+    )
+
+    assert _assign(engine, client).updates == 2
+    with session_scope(engine) as session:
+        updates = session.scalars(
+            select(EventItem).where(EventItem.relation == "update").order_by(EventItem.id)
+        ).all()
+        assert updates[0].new_facts == ["Эвакуированы 30 человек"]
+        assert updates[1].new_facts == ["Официальное подтверждение"]
+
+
 def test_similar_but_different_event_stays_separate(engine: Engine) -> None:
     _add(engine, "1", "Пожар: горит склад")
     _add(engine, "2", "Пожар в жилом доме на другом конце города")

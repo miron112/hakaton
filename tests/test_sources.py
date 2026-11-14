@@ -117,6 +117,26 @@ def test_handle_and_role_fields(tmp_path: Path, session: Session) -> None:
     assert session.scalar(select(Source.role).where(Source.type == "rss")) == "own"
 
 
+def test_full_text_flag_is_stored_and_only_for_rss(tmp_path: Path, session: Session) -> None:
+    text = """
+- name: "Лента"
+  type: rss
+  url: "https://example.com/rss.xml"
+  geo: khmao
+  full_text: true
+- name: "Канал"
+  type: telegram
+  handle: example_channel
+  geo: khmao
+  full_text: true
+"""
+    result = load_sources(_write(tmp_path, text))
+
+    assert [source.name for source in result.sources] == ["Лента"] and len(result.errors) == 1
+    sync_sources(session, result.sources)
+    assert session.scalar(select(Source.parser_config)) == {"full_text": True}
+
+
 def test_empty_file_is_ok(tmp_path: Path) -> None:
     assert load_sources(_write(tmp_path, "# пусто\n")).sources == []
 

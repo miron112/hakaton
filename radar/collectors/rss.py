@@ -1,13 +1,17 @@
-"""Сборщик RSS/Atom-лент."""
+"""Сборщик RSS/Atom-лент. С опцией full_text догружает полный текст статьи по ссылке."""
 
+import asyncio
+import logging
 from calendar import timegm
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import feedparser
 
 from radar.collectors.base import CollectedItem, Collector, clean_text, html_to_text
-from radar.models import Source
+from radar.config import get_settings
+from radar.log import log_event
+from radar.models import Source, utcnow
 
 
 def _published_at(entry: Any) -> datetime | None:
@@ -49,9 +53,46 @@ def parse_feed(content: bytes) -> list[CollectedItem]:
 
 
 class RssCollector(Collector):
+    time_budget_factor = 6.0  # с full_text кроме ленты качаются статьи
+
+    async def _add_full_text(
+        self, item: CollectedItem, source: Source, semaphore: asyncio.Semaphore
+    ) -> None:
+        """Заменяет краткое описание из ленты текстом статьи. При сбое остаётся описание."""
+        from radar.collectors.html import extract_article  # trafilatura тяжёлая, грузим по надобности
+
+        try:
+            async with semaphore:
+                response = await self.client.get(item.url)
+                response.raise_for_status()
+            article = extract_article(response.text, item.url)
+        except Exception as error:
+            log_event(
+                "collect", "article_error", source.name, logging.WARNING,
+                url=item.url, error=f"{type(error).__name__}: {error}"[:200],
+            )
+            return
+        if article and len(article["text"]) > len(item.text):
+            item.text = article["text"][: get_settings().llm_max_text_chars]
+
     async def fetch(
         self, source: Source, known_ids: frozenset[str] = frozenset()
     ) -> list[CollectedItem]:
         response = await self.client.get(source.url)
         response.raise_for_status()
-        return parse_feed(response.content)
+        items = parse_feed(response.content)
+        if not (source.parser_config or {}).get("full_text"):
+            return items
+
+        settings = get_settings()
+        # Старое и уже сохранённое не трогаем: полный текст нужен только тому, что пойдёт в анализ
+        fresh_after = utcnow() - timedelta(hours=settings.initial_lookback_hours)
+        to_load = [
+            item for item in items
+            if item.url
+            and item.external_id not in known_ids
+            and (item.published_at is None or item.published_at >= fresh_after)
+        ][: settings.rss_full_text_max_per_cycle]
+        semaphore = asyncio.Semaphore(settings.html_article_concurrency)
+        await asyncio.gather(*(self._add_full_text(item, source, semaphore) for item in to_load))
+        return items

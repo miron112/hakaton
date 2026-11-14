@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     user_agent: str = "Mozilla/5.0 (compatible; SurgutNewsRadar/0.1; hackathon prototype)"
     initial_lookback_hours: int = 24
     html_article_concurrency: int = 3  # одновременных загрузок статей с одного сайта
+    rss_full_text_max_per_cycle: int = 100  # для rss с full_text: не больше статей за цикл с источника
 
     # Предфильтр
     min_text_len: int = 40  # заголовок + текст; в RSS описания короткие
@@ -74,14 +75,17 @@ class Settings(BaseSettings):
     # У e5 даже несвязанные новости дают ~0.80–0.89; одно событие — от ~0.93 (проверено на данных 14.11)
     dedup_sim_threshold: float = 0.90
     dedup_top_k: int = 5
+    # «Новый факт» из Промта 2, похожий на уже известный сильнее порога, новым не считается
+    dedup_fact_sim_threshold: float = 0.92
 
     # Уведомления
     notify_min_importance: int = 3
     notify_min_importance_surgut: int = 2
     breaking_min_importance: int = 4
     max_notifications_per_cycle: int = 10
-    # true — не слать события с geo other/unknown, если они не затрагивают Сургут
-    notify_local_only: bool = False
+    # true — не слать события с geo other/unknown, если они не затрагивают Сургут.
+    # Отступление от правила из задания: без него в ленту попадают громкие чужие новости.
+    notify_local_only: bool = True
 
     log_level: str = "INFO"
 

@@ -3,8 +3,8 @@
 from functools import cache
 from pathlib import Path
 
-ANALYZE_PROMPT_VERSION = "p1-v0.1"
-DEDUP_PROMPT_VERSION = "p2-v0.1"
+ANALYZE_PROMPT_VERSION = "p1-v0.2"
+DEDUP_PROMPT_VERSION = "p2-v0.2"
 
 _DIR = Path(__file__).parent
 

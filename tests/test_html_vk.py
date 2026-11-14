@@ -1,16 +1,18 @@
 """Сборщики HTML и VK. Сеть подменена, страницы — придуманные заглушки на example.com."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 
 import httpx
 import pytest
 
 from radar.collectors.html import HtmlCollector, _published_at, parse_article, parse_listing
+from radar.collectors.rss import RssCollector
 from radar.collectors.vk import VkCollector, parse_wall, wall_params
 from radar.config import get_settings
-from radar.models import Source
+from radar.models import Source, utcnow
 
 FIXTURES = Path(__file__).parent / "fixtures"
 LISTING = (FIXTURES / "html_listing_stub.html").read_text(encoding="utf-8")
@@ -92,6 +94,50 @@ def test_html_collector_skips_known_and_survives_broken_article() -> None:
     items = asyncio.run(run(frozenset(item.external_id for item in items)))
     assert items == []
     assert sorted(requested) == [BASE, "https://example.com/news/103-bitaya-statya"]  # известные не качаем
+
+
+# --- RSS с полным текстом ---
+
+def _feed_entry(key: str, hours_ago: int) -> str:
+    published = (utcnow() - timedelta(hours=hours_ago)).replace(tzinfo=timezone.utc)
+    return (
+        f"<item><title>Новость {key}</title><link>https://example.com/a/{key}</link>"
+        f"<guid>{key}</guid><pubDate>{format_datetime(published)}</pubDate>"
+        f"<description>Кратко.</description></item>"
+    )
+
+
+def test_rss_full_text_replaces_short_description_for_new_fresh_items() -> None:
+    feed = (
+        '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>t</title>'
+        + _feed_entry("new", 1) + _feed_entry("known", 1) + _feed_entry("old", 100)
+        + _feed_entry("broken", 1) + "</channel></rss>"
+    )
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(request.url.path)
+        if request.url.path == "/rss":
+            return httpx.Response(200, content=feed.encode())
+        if request.url.path.endswith("broken"):
+            return httpx.Response(503)
+        return httpx.Response(200, text=ARTICLE)
+
+    async def run(parser_config):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            source = Source(id=1, name="Лента", type="rss", url="https://example.com/rss",
+                            geo="khmao", parser_config=parser_config)
+            items = await RssCollector(client).fetch(source, frozenset({"known"}))
+            return {item.external_id: item for item in items}
+
+    items = asyncio.run(run({"full_text": True}))
+    assert "Аварийная бригада уже работает на месте" in items["new"].text
+    assert items["known"].text == items["old"].text == items["broken"].text == "Кратко."
+    assert sorted(requested) == ["/a/broken", "/a/new", "/rss"]  # известное и старое не качаем
+
+    requested.clear()
+    items = asyncio.run(run(None))
+    assert items["new"].text == "Кратко." and requested == ["/rss"]
 
 
 # --- VK ---

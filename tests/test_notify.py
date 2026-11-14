@@ -56,7 +56,8 @@ def test_markers(urgency: str, importance: int, marker: str) -> None:
 def test_local_only_option(monkeypatch) -> None:
     settings = get_settings()
     far = _analysis(geo_level="other", affects_surgut=False, importance=5)
-    assert decide(far, settings).send is True  # по умолчанию — как в задании
+    monkeypatch.setattr(settings, "notify_local_only", False)
+    assert decide(far, settings).send is True  # правило из задания без доработки
 
     monkeypatch.setattr(settings, "notify_local_only", True)
     assert decide(far, settings).reason == "not_local"
