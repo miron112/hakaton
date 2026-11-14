@@ -34,6 +34,7 @@ python -m venv .venv
 .venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
 copy .env.example .env          # и заполнить ключи
+copy sources.example.yaml sources.yaml   # и вписать реальные источники
 ```
 
 Проверка:
@@ -88,7 +89,8 @@ docker compose up --build
 
 ## Как добавить источник
 
-Добавьте запись в `sources.yaml` (описание полей — в шапке файла) и выполните
+`sources.yaml` в репозиторий не входит: создайте его из `sources.example.yaml`.
+Добавьте запись в `sources.yaml` (описание полей — в шапке образца) и выполните
 `python -m radar.sources`: команда покажет ошибки в записях и добавит новые источники в базу.
 
 - Для `html` нужен блок `parser`: `list_selector` — блок одной новости на странице-ленте,

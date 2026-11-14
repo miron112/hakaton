@@ -1,4 +1,4 @@
-"""Тексты промтов (источник — radar_prompts.md). При правке текста меняйте версию."""
+"""Тексты промтов. При правке текста меняйте версию."""
 
 from functools import cache
 from pathlib import Path

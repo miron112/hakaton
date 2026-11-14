@@ -9,3 +9,9 @@ venv/
 *.db-journal
 .idea/
 .vscode/
+
+# Рабочие файлы команды: не публикуются
+sources.yaml
+build_prompt.md
+radar_prompts.md
+calibration.csv

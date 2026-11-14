@@ -1,0 +1,50 @@
+# Образец списка источников. Скопируйте в sources.yaml и замените заглушки реальными источниками.
+# Записи, у которых name, url или handle начинается с "TODO", загрузчик пропускает.
+#
+# Поля:
+#   name     — название, как его увидит редактор
+#   type     — rss | html | telegram | vk
+#   url      — rss/html: полный адрес ленты или страницы со списком новостей
+#   handle   — telegram: имя публичного канала; vk: короткое имя или id сообщества
+#   geo      — surgut_city | surgut_district | khmao
+#   priority — 1 (самый важный) … 3; по умолчанию 2
+#   enabled  — true | false; по умолчанию true
+#   role     — source (по умолчанию) | own (лента самой редакции: не уведомлять, только сравнивать)
+#   note     — необязательная пометка для LLM, например "официальный канал ведомства"
+#   parser   — только для html: CSS-селекторы блока новости и ссылки внутри него
+#
+# Проверка файла: python -m radar.sources
+
+- name: "TODO: RSS-лента"
+  type: rss
+  url: "TODO"
+  geo: surgut_city
+  priority: 1
+
+- name: "TODO: сайт без RSS"
+  type: html
+  url: "TODO"
+  geo: surgut_city
+  priority: 1
+  note: "официальный сайт"
+  parser:
+    list_selector: "TODO"
+    link_selector: "TODO"
+
+- name: "TODO: Telegram-канал"
+  type: telegram
+  handle: TODO
+  geo: surgut_city
+  priority: 2
+
+- name: "TODO: сообщество VK"
+  type: vk
+  handle: TODO
+  geo: khmao
+  priority: 3
+
+- name: "TODO: лента самой редакции"
+  type: rss
+  url: "TODO"
+  geo: surgut_city
+  role: own
