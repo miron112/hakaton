@@ -1,0 +1,8 @@
+ИСТОЧНИК: {{source_name}} ({{source_type}}; приоритет источника: {{source_priority}}; {{source_note}})
+ОПУБЛИКОВАНО: {{published_at}}
+ССЫЛКА: {{url}}
+
+ТЕКСТ:
+<<<
+{{text}}
+>>>

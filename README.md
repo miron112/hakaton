@@ -1,0 +1,155 @@
+# Новостной радар Сургута и Югры
+
+Прототип для редакции СИА-ПРЕСС: каждые 15 минут проверяет источники (RSS, сайты, Telegram, VK),
+отбирает значимое для Сургута и Югры, убирает дубли и присылает редактору уведомление в Telegram.
+
+```
+sources.yaml ──► Collectors ──► raw_items ──► Prefilter ──► LLM-анализ (Промт 1)
+                                                              │
+                                                              ▼
+                       Telegram ◄── Notifier ◄── Dedup (эмбеддинги + Промт 2) ──► events
+                          │
+                          └── кнопки 👍/👎/✅ ──► feedback
+```
+
+## Состояние
+
+| Этап | Что | Статус |
+|---|---|---|
+| 1 | Каркас: конфиг, БД, загрузка `sources.yaml`, docker-compose | готово |
+| 2 | Сбор: RSS и Telegram, `run_once` | готово |
+| 3 | Предфильтр и LLM-анализ (Промт 1) | готово |
+| 4 | Уведомления и кнопки обратной связи | готово, в настоящем Telegram не проверено |
+| 5 | Дедупликация (эмбеддинги + Промт 2), обновления ответом | готово |
+| 6 | Сборщики HTML и VK | готово, на реальных сайтах и VK не проверено |
+| 7 | Планировщик, `/status`, `/today`, защита от флуда | готово |
+| 8 | Админка и `eval` | готово |
+
+## Запуск локально
+
+Нужен Python 3.11+.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env          # и заполнить ключи
+```
+
+Проверка:
+
+```bash
+python -m pytest                # тесты, сеть не нужна
+python -m radar.sources         # проверить sources.yaml и записать источники в БД
+python -m radar.run_once        # один цикл на реальных источниках с подробным выводом
+python -m radar.scheduler       # основной режим: цикл каждые 15 минут + бот
+streamlit run radar/admin/app.py   # админка, http://localhost:8501
+python -m radar.eval --file calibration.csv   # проверка Промта 1 на разметке редакции
+```
+
+> Python 3.15 на Windows: у PyYAML нет готовой сборки. Ставится так:
+> `set PYYAML_FORCE_LIBYAML=0` (PowerShell: `$env:PYYAML_FORCE_LIBYAML='0'`), затем `pip install PyYAML`.
+> Надёжнее использовать Python 3.11–3.12, как в Docker-образе.
+
+## Telegram-бот
+
+1. Создайте бота у @BotFather, токен запишите в `.env` как `TELEGRAM_BOT_TOKEN`.
+2. Запустите `python -m radar.bot` и напишите боту `/start` — он пришлёт ID чата.
+   Запишите его в `.env` как `TELEGRAM_EDITOR_CHAT_ID` (для группы — добавьте бота в группу и вызовите `/start` там).
+3. `python -m radar.scheduler` — основной режим: сбор каждые 15 минут, уведомления, кнопки и команды.
+   Для разовой проверки: `python -m radar.run_once` отправит уведомления, а кнопки обрабатывает `python -m radar.bot`.
+
+Команды бота: `/start`, `/status` (какие источники работают, упали или давно молчат; последний цикл),
+`/today` (сводка за день). `/status` и `/today` отвечают только в чате редакции.
+
+Если бот пишет «включён вебхук» — этим токеном пользуется другой сервис. Создайте для радара
+отдельного бота или задайте `TELEGRAM_DELETE_WEBHOOK=true` (тот сервис перестанет получать сообщения).
+
+Правила отправки — `radar/pipeline/notify_rules.py`, пороги — в `.env`
+(`NOTIFY_MIN_IMPORTANCE`, `NOTIFY_MIN_IMPORTANCE_SURGUT`, `BREAKING_MIN_IMPORTANCE`,
+`MAX_NOTIFICATIONS_PER_CYCLE`, `NOTIFY_LOCAL_ONLY`). Материалы источников с `role: own` не отправляются.
+
+> Python 3.15: `aiogram` 3 ставится только так: `pip install --no-deps "aiogram>=3.10,<4"`,
+> затем `pip install aiohttp aiofiles magic-filter certifi typing-extensions`.
+
+## Запуск в Docker
+
+```bash
+docker compose up --build
+```
+
+Поднимает два сервиса: `radar` (сбор + бот) и `admin` (Streamlit, http://localhost:8501).
+В Docker сборка не проверялась (на машине разработки Docker не установлен).
+
+## Настройки
+
+Все секреты и параметры — в `.env` (в git не попадает). Образец — `.env.example`,
+полный список параметров и значения по умолчанию — `radar/config.py`.
+
+## Как добавить источник
+
+Добавьте запись в `sources.yaml` (описание полей — в шапке файла) и выполните
+`python -m radar.sources`: команда покажет ошибки в записях и добавит новые источники в базу.
+
+- Для `html` нужен блок `parser`: `list_selector` — блок одной новости на странице-ленте,
+  `link_selector` — ссылка на статью внутри блока, `max_items` — сколько верхних новостей смотреть (20).
+  Текст статьи извлекается автоматически.
+- Для `vk` нужен `VK_TOKEN` в `.env` (сервисный ключ приложения VK).
+- Источник можно добавить и через админку, вкладка «Источники».
+- Для `telegram` и `vk` вместо `url` можно писать `handle` (имя канала или сообщества).
+- `role: own` — лента самой редакции: собирается для сравнения, уведомления по ней не шлются.
+- Записи с `TODO` в `name` или `url` пропускаются.
+- Ошибка в одной записи не мешает загрузить остальные.
+- `enabled` и `priority` берутся из YAML только при первом добавлении, дальше ими управляет админка.
+
+## Как сменить LLM-провайдера
+
+Любой OpenAI-совместимый API — правкой `.env`, без изменения кода:
+
+```
+LLM_PROVIDER=openai_compat
+LLM_BASE_URL=https://polza.ai/api/v1
+LLM_API_KEY=...
+LLM_MODEL=openai/gpt-4o-mini
+```
+
+Список моделей Polza.ai: `GET https://polza.ai/api/v1/models?type=chat`.
+
+Если модель не поддерживает JSON-режим, задайте `LLM_JSON_MODE=false`.
+Расход токенов пишется в лог на каждый запрос и итогом за цикл (`stage=analyze result=cycle`).
+
+## Промты
+
+Тексты лежат в `radar/prompts/*.txt`, переменные редакции (`EDITORIAL_PRIORITIES`,
+`EXCLUDED_TOPICS`, `TOPICS`) задаются в `.env`. После правки текста промта поменяйте
+`ANALYZE_PROMPT_VERSION` в `radar/prompts/__init__.py` — версия сохраняется с каждым ответом.
+
+## Дедупликация
+
+Для каждого релевантного материала считается эмбеддинг (`intfloat/multilingual-e5-small`, локально,
+при первом запуске модель скачивается с Hugging Face, ~470 МБ). Среди событий за последние
+`DEDUP_WINDOW_HOURS` ищутся похожие с близостью от `DEDUP_SIM_THRESHOLD`:
+
+- похожих нет — новое событие, LLM не вызывается;
+- похожие есть — Промт 2 решает: `duplicate` (источник добавляется к событию, уведомления нет),
+  `update` (новые факты приходят ответом на исходное сообщение) или `new_event`.
+
+Если порог слишком низкий, растёт число вызовов LLM; слишком высокий — проходят дубли.
+Близость каждого решения пишется в лог (`stage=dedup ... similarity=`).
+
+## Проверка качества отбора (eval)
+
+Соберите CSV с реальными постами и разметкой редакции (образец — `calibration.example.csv`):
+колонки `text`, `is_relevant` (1/0 или да/нет), по желанию `importance`, `title`, `source_name`.
+
+```bash
+python -m radar.eval --file calibration.csv
+```
+
+Скрипт прогонит Промт 1 и покажет precision и recall по `is_relevant`, среднюю ошибку по `importance`
+и списки пропущенного и лишнего. Запускайте после каждой правки промта.
+
+## База данных
+
+SQLite, файл `data/radar.db`. Для Postgres достаточно задать `DATABASE_URL`
+и поставить драйвер — схема использует только переносимые типы.

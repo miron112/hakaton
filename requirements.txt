@@ -1,0 +1,18 @@
+# CPU-сборка torch: без неё sentence-transformers тянет гигабайты CUDA-библиотек
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+httpx>=0.27
+feedparser>=6.0
+selectolax>=0.3.21
+trafilatura>=1.12
+APScheduler>=3.10,<4
+SQLAlchemy>=2.0
+pydantic>=2.7
+pydantic-settings>=2.3
+PyYAML>=6.0
+openai>=1.40
+aiogram>=3.10,<4
+sentence-transformers>=3.0
+streamlit>=1.50
+pandas>=2.2
+pytest>=8.0

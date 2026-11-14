@@ -1,0 +1,24 @@
+services:
+  radar:
+    build: .
+    command: python -m radar.scheduler
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./sources.yaml:/app/sources.yaml:ro
+      - hf_cache:/root/.cache/huggingface
+    restart: unless-stopped
+
+  admin:
+    build: .
+    command: streamlit run radar/admin/app.py --server.port 8501 --server.address 0.0.0.0
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./sources.yaml:/app/sources.yaml:ro
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  hf_cache:

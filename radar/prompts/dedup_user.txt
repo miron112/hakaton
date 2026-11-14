@@ -1,0 +1,8 @@
+НОВЫЙ МАТЕРИАЛ:
+Источник: {{source_name}}, {{published_at}}
+Заголовок: {{headline}}
+Суть: {{summary}}
+Факты: {{key_facts}}
+
+ИЗВЕСТНЫЕ СОБЫТИЯ:
+{{candidates}}
